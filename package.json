@@ -2,10 +2,13 @@
   "name": "node-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "main": "app.js",
+"scripts": {
+    "start": "npm run app.js",
+    "test": "jest",
+    "build": "npm install --production"
+  
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
