@@ -1,135 +1,190 @@
 pipeline {
-    agent any
-
-    // Configuración de herramientas globales
-    tools {
-        nodejs 'NodeJS' // Nombre de la instalación de Node.js en Jenkins
+    agent {
+        label 'nodejs-agent' // Especifica un agente con Node.js instalado
     }
 
-    // Variables de entorno con valores por defecto
+    options {
+        timeout(time: 20, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        disableConcurrentBuilds()
+    }
+
     environment {
-        APP_NAME = 'node-backend'
-        NODE_ENV = 'production'
-        REPO_URL = 'https://github.com/Raulcudris/devops_Nodes.git'
-        REPO_CREDENTIALS = 'github_id' // ID de tus credenciales en Jenkins
-        SLACK_CHANNEL = '#jenkins-notifications'
-    }
-
-    // Parámetros configurables desde la UI de Jenkins
-    parameters {
-        string(name: 'DEPLOY_ENV', defaultValue: 'staging', description: 'Entorno de despliegue')
-        choice(name: 'NODE_VERSION', choices: ['18.x', '20.x'], description: 'Versión de Node.js')
-        booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Ejecutar pruebas unitarias')
+        // Configuración básica
+        APP_NAME = "mi-app-js"
+        NODE_VERSION = "18.x" // Versión específica de Node.js
+        
+        // Configuración del repositorio (usar credenciales de Jenkins)
+        REPO_URL = "https://github.com/Raulcudris/devops_Nodes.git"
+        
+        // Configuración de calidad de código
+        ESLINT_RULES = "eslint:recommended"
+        UNIT_TEST_SCRIPT = "npm test"
+        
+        // Notificaciones
+        SLACK_CHANNEL = "#dev-notifications"
     }
 
     stages {
-        stage('Validación inicial') {
+        stage('Preparación') {
             steps {
                 script {
-                    // Validación de variables críticas
-                    if (!env.REPO_URL?.trim()) {
-                        error 'REPO_URL no está configurado'
-                    }
-
-                    if (!env.REPO_CREDENTIALS?.trim()) {
-                        error 'REPO_CREDENTIALS no está configurado'
-                    }
-
-                    echo '=========================================='
-                    echo "Iniciando pipeline para ${env.APP_NAME}"
-                    echo "Node.js version: ${env.NODE_VERSION}"
-                    echo "Repositorio: ${env.REPO_URL}"
-                    echo "Entorno: ${params.DEPLOY_ENV}"
-                    echo '=========================================='
+                    echo "🚀 Iniciando pipeline para aplicación JavaScript"
+                    echo "📦 Aplicación: ${APP_NAME}"
+                    echo "🔗 Repositorio: ${REPO_URL}"
+                    echo "🔄 Versión Node.js: ${NODE_VERSION}"
+                    
+                    // Verificar herramientas esenciales
+                    sh '''
+                        node --version || { echo "❌ Node.js no está instalado"; exit 1; }
+                        npm --version || { echo "❌ npm no está instalado"; exit 1; }
+                        git --version || { echo "❌ Git no está instalado"; exit 1; }
+                    '''
                 }
             }
         }
 
-        stage('Checkout') {
+        stage('Checkout Código') {
             steps {
-                script {
-                    try {
-                        checkout([
+                checkout([
                     $class: 'GitSCM',
-                    branches: [[name: 'master']],
+                    branches: [[name: 'main']],
                     extensions: [
-                        [$class: 'CleanCheckout'],
+                        [$class: 'CleanBeforeCheckout'],
+                        [$class: 'RelativeTargetDirectory', relativeTargetDir: 'src'],
                         [$class: 'CloneOption', depth: 1, noTags: false, shallow: true]
                     ],
                     userRemoteConfigs: [[
-                        url: env.REPO_URL,
-                        credentialsId: env.REPO_CREDENTIALS,
-                        refspec: '+refs/heads/*:refs/remotes/origin/*'
+                        url: "${env.REPO_URL}",
+                        credentialsId: "github-creds" // Credencial configurada en Jenkins
                     ]]
                 ])
-            } catch (Exception e) {
-                        error "Error en checkout: ${e.getMessage()}"
-                    }
+                
+                dir('src') {
+                    sh 'git log -1 --pretty=%B > commit_message.txt'
+                    sh 'cat commit_message.txt'
                 }
             }
         }
 
-        stage('Instalar dependencias') {
+        stage('Configurar Entorno') {
             steps {
                 script {
-                    try {
-                        sh 'npm install'
-                        echo '✅ Dependencias instaladas correctamente'
-                    } catch (Exception e) {
-                        echo "❌ Error instalando dependencias: ${e.toString()}"
-                        currentBuild.result = 'FAILURE'
-                        error 'Falló la instalación de dependencias'
+                    // Usar versión específica de Node.js
+                    nvm(nodeJSInstallationName: 'NodeJS') {
+                        sh 'node --version'
+                    }
+                    
+                    // Configurar npm (opcional)
+                    sh 'npm config set loglevel warn'
+                    sh 'npm config set fund false'
+                }
+            }
+        }
+
+        stage('Instalar Dependencias') {
+            steps {
+                dir('src') {
+                    script {
+                        try {
+                            // Usar cache de npm si está configurado
+                            cache([$class: 'ArbitraryFileCache', path: 'node_modules/']) {
+                                sh 'npm ci --prefer-offline'
+                            }
+                            echo "✅ Dependencias instaladas correctamente"
+                        } catch (Exception e) {
+                            echo "❌ Error instalando dependencias: ${e.toString()}"
+                            echo "Intentando con npm install..."
+                            sh 'npm install'
+                        }
                     }
                 }
             }
         }
 
-        stage('Pruebas unitarias') {
+        stage('Linting y Análisis de Código') {
+            steps {
+                dir('src') {
+                    script {
+                        try {
+                            sh 'npm run lint || echo "⚠️ Linting encontró problemas"'
+                            // Opcional: Guardar reporte de ESLint
+                            archiveArtifacts artifacts: 'eslint-report.xml', allowEmptyArchive: true
+                        } catch (Exception e) {
+                            echo "❌ Error en linting: ${e.toString()}"
+                            currentBuild.result = 'UNSTABLE'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Pruebas Unitarias') {
+            steps {
+                dir('src') {
+                    script {
+                        try {
+                            sh "${env.UNIT_TEST_SCRIPT}"
+                            // Guardar reportes de cobertura
+                            junit '**/test-results.xml'
+                            archiveArtifacts artifacts: 'coverage/**/*'
+                        } catch (Exception e) {
+                            echo "❌ Error en pruebas unitarias: ${e.toString()}"
+                            currentBuild.result = 'UNSTABLE'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Producción') {
+            steps {
+                dir('src') {
+                    script {
+                        try {
+                            sh 'npm run build'
+                            echo "✅ Build de producción completado"
+                            archiveArtifacts artifacts: 'dist/**/*'
+                        } catch (Exception e) {
+                            echo "❌ Error en build: ${e.toString()}"
+                            currentBuild.result = 'FAILURE'
+                            error "Fallo en el build de producción"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Despliegue') {
             when {
-                expression { params.RUN_TESTS.toBoolean() }
+                expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
             }
             steps {
-                script {
-                    try {
-                        sh 'npm test'
-                        echo '✅ Pruebas unitarias exitosas'
-                    } catch (Exception e) {
-                        echo "❌ Fallaron las pruebas unitarias: ${e.toString()}"
-                        currentBuild.result = 'UNSTABLE'
-                        error 'Las pruebas unitarias fallaron'
-                    }
-                }
-            }
-        }
-
-        stage('Build') {
-            steps {
-                script {
-                    try {
-                        sh 'npm run build'
-                        echo '✅ Build completado exitosamente'
-                    } catch (Exception e) {
-                        echo "❌ Error en el build: ${e.toString()}"
-                        currentBuild.result = 'FAILURE'
-                        error 'Falló el proceso de build'
-                    }
-                }
-            }
-        }
-
-        stage('Desplegar') {
-            steps {
-                script {
-                    try {
-                        sh """
-                        pm2 stop ${env.APP_NAME} || true
-                        pm2 start app.js --name ${env.APP_NAME} --env ${params.DEPLOY_ENV}
-                        """
-                        echo '✅ Aplicación desplegada correctamente'
-                    } catch (Exception e) {
-                        echo "❌ Error en despliegue: ${e.toString()}"
-                        currentBuild.result = 'FAILURE'
-                        error 'Falló el despliegue de la aplicación'
+                dir('src') {
+                    script {
+                        try {
+                            // Ejemplo para despliegue en servidor (ajustar según necesidades)
+                            sh '''
+                            # Detener aplicación si está corriendo
+                            pm2 delete ${APP_NAME} || true
+                            
+                            # Iniciar aplicación
+                            pm2 start dist/app.js --name ${APP_NAME} \
+                                --env production \
+                                --log /var/log/${APP_NAME}.log \
+                                --output /var/log/${APP_NAME}-out.log \
+                                --error /var/log/${APP_NAME}-err.log
+                            
+                            # Guardar configuración PM2
+                            pm2 save
+                            '''
+                            
+                            echo "🚀 Aplicación desplegada correctamente"
+                        } catch (Exception e) {
+                            echo "❌ Error en despliegue: ${e.toString()}"
+                            currentBuild.result = 'FAILURE'
+                            error "Fallo en el despliegue"
+                        }
                     }
                 }
             }
@@ -139,37 +194,45 @@ pipeline {
     post {
         always {
             script {
-                echo "Pipeline completado - Resultado: ${currentBuild.currentResult}"
-                cleanWs() // Limpiar workspace
+                echo "🏁 Pipeline completado - Resultado: ${currentBuild.currentResult}"
+                echo "⏱️ Duración: ${currentBuild.durationString}"
+                
+                // Limpieza
+                cleanWs()
             }
         }
+        
         success {
             slackSend(
                 channel: env.SLACK_CHANNEL,
-                color: 'good',
-                message: "✅ Pipeline exitoso: ${env.JOB_NAME} (#${env.BUILD_NUMBER})\n" +
-                         "Estado: ${currentBuild.currentResult}\n" +
-                         "URL: ${env.BUILD_URL}"
+                color: "good",
+                message: """✅ *${env.APP_NAME}* - Pipeline Exitoso
+• *Build*: #${env.BUILD_NUMBER}
+• *Nodo*: ${env.NODE_NAME}
+• *Duración*: ${currentBuild.durationString}
+• *Commit*: ${sh(returnStdout: true, script: 'cd src && git log -1 --pretty=%h')}"""
             )
         }
+        
         failure {
             slackSend(
                 channel: env.SLACK_CHANNEL,
-                color: 'danger',
-                message: "❌ Pipeline fallido: ${env.JOB_NAME} (#${env.BUILD_NUMBER})\n" +
-                         "Estado: ${currentBuild.currentResult}\n" +
-                         "URL: ${env.BUILD_URL}\n" +
-                         'Consulte los logs para más detalles'
+                color: "danger",
+                message: """❌ *${env.APP_NAME}* - Pipeline Fallido
+• *Build*: #${env.BUILD_NUMBER}
+• *Error*: ${currentBuild.currentResult}
+• *Consulte*: ${env.BUILD_URL}"""
             )
         }
+        
         unstable {
             slackSend(
                 channel: env.SLACK_CHANNEL,
-                color: 'warning',
-                message: "⚠️ Pipeline inestable: ${env.JOB_NAME} (#${env.BUILD_NUMBER})\n" +
-                         "Estado: ${currentBuild.currentResult}\n" +
-                         "URL: ${env.BUILD_URL}\n" +
-                         'Posibles fallas en pruebas unitarias'
+                color: "warning",
+                message: """⚠️ *${env.APP_NAME}* - Pipeline Inestable
+• *Build*: #${env.BUILD_NUMBER}
+• *Razón*: Problemas en linting o pruebas
+• *Detalles*: ${env.BUILD_URL}"""
             )
         }
     }
