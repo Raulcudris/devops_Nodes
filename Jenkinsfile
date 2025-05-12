@@ -47,24 +47,11 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                script {
-                    try {
-                        checkout([
-                            $class: 'GitSCM',
-                            branches: [[name: 'master']],
-                            extensions: [],
-                            userRemoteConfigs: [[
-                                url: env.REPO_URL,
-                                credentialsId: env.REPO_CREDENTIALS
-                            ]]
-                        ])
-                        echo "✅ Checkout completado exitosamente"
-                    } catch (Exception e) {
-                        echo "❌ Error en checkout: ${e.toString()}"
-                        currentBuild.result = 'FAILURE'
-                        error "Falló el checkout del repositorio"
-                    }
-                }
+                git(
+                    url : "https://github.com/Raulcudris/devops_Nodes.git",
+                    credentialsId : "github_id",
+                    branch : 'master'
+                )
             }
         }
 
