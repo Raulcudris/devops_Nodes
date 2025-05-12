@@ -51,7 +51,7 @@ pipeline {
                     try {
                         checkout([
                     $class: 'GitSCM',
-                    branches: [[name: 'main']],
+                    branches: [[name: 'master']],
                     extensions: [
                         [$class: 'CleanCheckout'],
                         [$class: 'CloneOption', depth: 1, noTags: false, shallow: true]
