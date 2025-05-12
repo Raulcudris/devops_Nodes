@@ -48,15 +48,14 @@ pipeline {
             steps {
                 checkout([
                     $class: 'GitSCM',
-                    branches: [[name: 'main']],
+                    branches: [[name: 'master']],
                     extensions: [
                         [$class: 'CleanBeforeCheckout'],
-                        [$class: 'RelativeTargetDirectory', relativeTargetDir: 'src'],
                         [$class: 'CloneOption', depth: 1, noTags: false, shallow: true]
                     ],
                     userRemoteConfigs: [[
                         url: "${env.REPO_URL}",
-                        credentialsId: "github-creds" // Credencial configurada en Jenkins
+                        credentialsId: "github_id" // Credencial configurada en Jenkins
                     ]]
                 ])
                 
@@ -84,7 +83,6 @@ pipeline {
 
         stage('Instalar Dependencias') {
             steps {
-                dir('src') {
                     script {
                         try {
                             // Usar cache de npm si está configurado
@@ -99,12 +97,10 @@ pipeline {
                         }
                     }
                 }
-            }
         }
 
         stage('Linting y Análisis de Código') {
             steps {
-                dir('src') {
                     script {
                         try {
                             sh 'npm run lint || echo "⚠️ Linting encontró problemas"'
@@ -115,13 +111,11 @@ pipeline {
                             currentBuild.result = 'UNSTABLE'
                         }
                     }
-                }
-            }
+                }            
         }
 
         stage('Pruebas Unitarias') {
             steps {
-                dir('src') {
                     script {
                         try {
                             sh "${env.UNIT_TEST_SCRIPT}"
@@ -134,12 +128,10 @@ pipeline {
                         }
                     }
                 }
-            }
-        }
+      }
 
         stage('Build Producción') {
             steps {
-                dir('src') {
                     script {
                         try {
                             sh 'npm run build'
@@ -152,15 +144,13 @@ pipeline {
                         }
                     }
                 }
-            }
-        }
+             }
 
         stage('Despliegue') {
             when {
                 expression { currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
             }
             steps {
-                dir('src') {
                     script {
                         try {
                             // Ejemplo para despliegue en servidor (ajustar según necesidades)
@@ -186,8 +176,7 @@ pipeline {
                             error "Fallo en el despliegue"
                         }
                     }
-                }
-            }
+               }
         }
     }
 
