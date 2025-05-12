@@ -11,7 +11,7 @@ pipeline {
         APP_NAME = "node-backend"
         NODE_ENV = "production"
         REPO_URL = "https://github.com/Raulcudris/devops_Nodes.git"
-        REPO_CREDENTIALS = "github" // ID de tus credenciales en Jenkins
+        REPO_CREDENTIALS = "github_id" // ID de tus credenciales en Jenkins
         SLACK_CHANNEL = "#jenkins-notifications"
     }
 
