@@ -3,16 +3,16 @@ pipeline {
 
     // Configuración de herramientas globales
     tools {
-        nodejs "NodeJS" // Nombre de la instalación de Node.js en Jenkins
+        nodejs 'NodeJS' // Nombre de la instalación de Node.js en Jenkins
     }
 
     // Variables de entorno con valores por defecto
     environment {
-        APP_NAME = "node-backend"
-        NODE_ENV = "production"
-        REPO_URL = "https://github.com/Raulcudris/devops_Nodes.git"
-        REPO_CREDENTIALS = "github_id" // ID de tus credenciales en Jenkins
-        SLACK_CHANNEL = "#jenkins-notifications"
+        APP_NAME = 'node-backend'
+        NODE_ENV = 'production'
+        REPO_URL = 'https://github.com/Raulcudris/devops_Nodes.git'
+        REPO_CREDENTIALS = 'github_id' // ID de tus credenciales en Jenkins
+        SLACK_CHANNEL = '#jenkins-notifications'
     }
 
     // Parámetros configurables desde la UI de Jenkins
@@ -28,30 +28,44 @@ pipeline {
                 script {
                     // Validación de variables críticas
                     if (!env.REPO_URL?.trim()) {
-                        error "REPO_URL no está configurado"
-                    }
-                    
-                    if (!env.REPO_CREDENTIALS?.trim()) {
-                        error "REPO_CREDENTIALS no está configurado"
+                        error 'REPO_URL no está configurado'
                     }
 
-                    echo "=========================================="
+                    if (!env.REPO_CREDENTIALS?.trim()) {
+                        error 'REPO_CREDENTIALS no está configurado'
+                    }
+
+                    echo '=========================================='
                     echo "Iniciando pipeline para ${env.APP_NAME}"
                     echo "Node.js version: ${env.NODE_VERSION}"
                     echo "Repositorio: ${env.REPO_URL}"
                     echo "Entorno: ${params.DEPLOY_ENV}"
-                    echo "=========================================="
+                    echo '=========================================='
                 }
             }
         }
 
         stage('Checkout') {
             steps {
-                git(
-                    url : "https://github.com/Raulcudris/devops_Nodes.git",
-                    credentialsId : "github_id",
-                    branch : 'master'
-                )
+                script {
+                    try {
+                        checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: 'main']],
+                    extensions: [
+                        [$class: 'CleanCheckout'],
+                        [$class: 'CloneOption', depth: 1, noTags: false, shallow: true]
+                    ],
+                    userRemoteConfigs: [[
+                        url: env.REPO_URL,
+                        credentialsId: env.REPO_CREDENTIALS,
+                        refspec: '+refs/heads/*:refs/remotes/origin/*'
+                    ]]
+                ])
+            } catch (Exception e) {
+                        error "Error en checkout: ${e.getMessage()}"
+                    }
+                }
             }
         }
 
@@ -60,11 +74,11 @@ pipeline {
                 script {
                     try {
                         sh 'npm install'
-                        echo "✅ Dependencias instaladas correctamente"
+                        echo '✅ Dependencias instaladas correctamente'
                     } catch (Exception e) {
                         echo "❌ Error instalando dependencias: ${e.toString()}"
                         currentBuild.result = 'FAILURE'
-                        error "Falló la instalación de dependencias"
+                        error 'Falló la instalación de dependencias'
                     }
                 }
             }
@@ -78,11 +92,11 @@ pipeline {
                 script {
                     try {
                         sh 'npm test'
-                        echo "✅ Pruebas unitarias exitosas"
+                        echo '✅ Pruebas unitarias exitosas'
                     } catch (Exception e) {
                         echo "❌ Fallaron las pruebas unitarias: ${e.toString()}"
                         currentBuild.result = 'UNSTABLE'
-                        error "Las pruebas unitarias fallaron"
+                        error 'Las pruebas unitarias fallaron'
                     }
                 }
             }
@@ -93,11 +107,11 @@ pipeline {
                 script {
                     try {
                         sh 'npm run build'
-                        echo "✅ Build completado exitosamente"
+                        echo '✅ Build completado exitosamente'
                     } catch (Exception e) {
                         echo "❌ Error en el build: ${e.toString()}"
                         currentBuild.result = 'FAILURE'
-                        error "Falló el proceso de build"
+                        error 'Falló el proceso de build'
                     }
                 }
             }
@@ -111,11 +125,11 @@ pipeline {
                         pm2 stop ${env.APP_NAME} || true
                         pm2 start app.js --name ${env.APP_NAME} --env ${params.DEPLOY_ENV}
                         """
-                        echo "✅ Aplicación desplegada correctamente"
+                        echo '✅ Aplicación desplegada correctamente'
                     } catch (Exception e) {
                         echo "❌ Error en despliegue: ${e.toString()}"
                         currentBuild.result = 'FAILURE'
-                        error "Falló el despliegue de la aplicación"
+                        error 'Falló el despliegue de la aplicación'
                     }
                 }
             }
@@ -132,7 +146,7 @@ pipeline {
         success {
             slackSend(
                 channel: env.SLACK_CHANNEL,
-                color: "good",
+                color: 'good',
                 message: "✅ Pipeline exitoso: ${env.JOB_NAME} (#${env.BUILD_NUMBER})\n" +
                          "Estado: ${currentBuild.currentResult}\n" +
                          "URL: ${env.BUILD_URL}"
@@ -141,21 +155,21 @@ pipeline {
         failure {
             slackSend(
                 channel: env.SLACK_CHANNEL,
-                color: "danger",
+                color: 'danger',
                 message: "❌ Pipeline fallido: ${env.JOB_NAME} (#${env.BUILD_NUMBER})\n" +
                          "Estado: ${currentBuild.currentResult}\n" +
                          "URL: ${env.BUILD_URL}\n" +
-                         "Consulte los logs para más detalles"
+                         'Consulte los logs para más detalles'
             )
         }
         unstable {
             slackSend(
                 channel: env.SLACK_CHANNEL,
-                color: "warning",
+                color: 'warning',
                 message: "⚠️ Pipeline inestable: ${env.JOB_NAME} (#${env.BUILD_NUMBER})\n" +
                          "Estado: ${currentBuild.currentResult}\n" +
                          "URL: ${env.BUILD_URL}\n" +
-                         "Posibles fallas en pruebas unitarias"
+                         'Posibles fallas en pruebas unitarias'
             )
         }
     }
